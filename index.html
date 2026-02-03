@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Body Fat % Modeller</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+<style>
+/* unchanged styles — omitted here for brevity */
+/* USE THE SAME <style> BLOCK FROM YOUR ORIGINAL FILE */
+</style>
+</head>
+
+<body>
+<div class="wrapper">
+
+<header>
+  <h1>Body <span>Fat %</span> Modeller</h1>
+  <p>Adaptive energy balance · Fat mass modelling</p>
+</header>
+
+<!-- Profile -->
+<div class="card">
+  <div class="card-label"><span class="dot"></span> Profile</div>
+  <div class="row three">
+    <div class="field">
+      <label>Height</label>
+      <div class="input-wrap">
+        <input type="number" id="height" value="175" oninput="calc()">
+        <span class="unit">cm</span>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Starting Weight</label>
+      <div class="input-wrap">
+        <input type="number" id="weight" value="80" oninput="calc()">
+        <span class="unit">kg</span>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Starting Body Fat</label>
+      <div class="input-wrap">
+        <input type="number" id="bf" value="22" step="0.1" oninput="calc()">
+        <span class="unit">%</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:12px;">
+    <div class="field">
+      <label>Age</label>
+      <div class="input-wrap">
+        <input type="number" id="age" value="35" oninput="calc()">
+        <span class="unit">yrs</span>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Biological Sex</label>
+      <select id="sex" onchange="calc()">
+        <option value="male">Male</option>
+        <option value="female">Female</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<!-- Activity & Intake (unchanged from original) -->
+<!-- KEEP YOUR EXISTING ACTIVITY + INTAKE CARD -->
+
+<!-- Projection -->
+<div class="card">
+  <div class="card-label"><span class="dot red"></span> Body Fat Projection</div>
+
+  <div class="projection-row">
+    <div class="proj-item">
+      <div class="proj-val" id="bfStart">—</div>
+      <div class="proj-label">Start</div>
+    </div>
+    <div class="proj-item">
+      <div class="proj-val" id="bfEnd">—</div>
+      <div class="proj-label">End</div>
+    </div>
+    <div class="proj-item">
+      <div class="proj-val" id="bfChange">—</div>
+      <div class="proj-label">Change</div>
+    </div>
+    <div class="proj-item">
+      <div class="proj-val" id="projDays">—</div>
+      <div class="proj-label">Days</div>
+    </div>
+  </div>
+
+  <div class="chart-container">
+    <canvas id="chart"></canvas>
+  </div>
+
+  <p class="note">
+    Fat mass is modelled explicitly. ~85% of weight change is assumed to be fat
+    under adequate protein and resistance training. Lean mass is constrained
+    to physiological minimums.
+  </p>
+</div>
+
+</div>
+
+<script>
+// ── constants ──────────────────────────────────────
+const kcalToKJ = 4.184;
+const FAT_FRACTION = 0.85;
+const ESSENTIAL_FAT = { male: 0.05, female: 0.12 };
+
+// ── helpers ────────────────────────────────────────
+function round1(n){ return Math.round(n*10)/10; }
+function mifflinBMR(w,h,a,s){
+  const base = 10*w + 6.25*h - 5*a;
+  return s === 'male' ? base + 5 : base - 161;
+}
+
+// ── simulation ─────────────────────────────────────
+function simulateBF(height, weight, bfPct, age, sex, actMult, intakeKJ, days){
+  let fat = weight * (bfPct/100);
+  let lean = weight - fat;
+  const series = [];
+
+  for(let d=0; d<=days; d++){
+    const curW = fat + lean;
+    const curBF = (fat / curW) * 100;
+    series.push(curBF);
+
+    const curAge = age + d/365;
+    const bmr = mifflinBMR(curW, height, curAge, sex);
+    const tdee = bmr * actMult * kcalToKJ;
+    const balKcal = (intakeKJ - tdee) / kcalToKJ;
+    const deltaKg = balKcal / 7700;
+
+    const fatDelta = deltaKg * FAT_FRACTION;
+    const leanDelta = deltaKg * (1 - FAT_FRACTION);
+
+    fat += fatDelta;
+    lean += leanDelta;
+
+    const minFat = curW * ESSENTIAL_FAT[sex];
+    if(fat < minFat) fat = minFat;
+  }
+  return series;
+}
+
+// ── chart (identical logic, Y axis = %) ────────────
+/* REUSE YOUR EXISTING drawChart(), but:
+   - rename weights → bfSeries
+   - Y label = "%"
+*/
+
+// ── calc ───────────────────────────────────────────
+function calc(){
+  const height = +heightEl.value;
+  const weight = +weightEl.value;
+  const bf = +bfEl.value;
+  const age = +ageEl.value;
+  const sex = sexEl.value;
+  const days = +daysEl.value;
+  const intake = +intakeEl.value;
+  const act = ACTIVITY[+exerciseEl.value];
+
+  const series = simulateBF(height, weight, bf, age, sex, act.mult, intake, days);
+
+  const start = series[0];
+  const end = series.at(-1);
+  const chg = round1(end - start);
+
+  bfStart.textContent = round1(start) + ' %';
+  bfEnd.textContent = round1(end) + ' %';
+  bfChange.textContent = (chg>0?'+':'') + chg + ' %';
+  projDays.textContent = days + ' d';
+
+  drawChart(series, days);
+}
+
+calc();
+</script>
+</body>
+</html>
